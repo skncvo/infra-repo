@@ -1,53 +1,93 @@
-- name: Ensure argocd namespace exists
-  shell: kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
-  register: argocd_ns_result
-  changed_when: "'created' in argocd_ns_result.stdout or 'configured' in argocd_ns_result.stdout"
-
-- name: Install Argo CD using official manifest
-  shell: kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-  register: argocd_install_result
-  changed_when: "'created' in argocd_install_result.stdout or 'configured' in argocd_install_result.stdout"
-
-- name: Wait for argocd-server deployment rollout
-  shell: kubectl rollout status deployment/argocd-server -n argocd --timeout=300s
+- name: Check API server readiness
+  command: kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes
+  register: kubectl_nodes_check
   changed_when: false
 
+- name: Ensure argocd namespace exists
+  shell: >
+    kubectl --kubeconfig=/etc/kubernetes/admin.conf create namespace argocd --dry-run=client -o yaml |
+    kubectl --kubeconfig=/etc/kubernetes/admin.conf apply -f -
+  register: argocd_ns_result
+  changed_when: "'created' in argocd_ns_result.stdout or 'configured' in argocd_ns_result.stdout"
+  when: kubectl_nodes_check.rc == 0
+
+- name: Install Argo CD using official manifest
+  command: >
+    kubectl --kubeconfig=/etc/kubernetes/admin.conf
+    apply --server-side --force-conflicts
+    -n argocd
+    -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+  register: argocd_install_result
+  changed_when: >
+    'created' in argocd_install_result.stdout or
+    'configured' in argocd_install_result.stdout or
+    'serverside-applied' in argocd_install_result.stdout
+  when: kubectl_nodes_check.rc == 0
+
+- name: Wait for argocd-server deployment rollout
+  command: >
+    kubectl --kubeconfig=/etc/kubernetes/admin.conf
+    rollout status deployment/argocd-server -n argocd --timeout=300s
+  changed_when: false
+  when: kubectl_nodes_check.rc == 0
+
 - name: Ensure argocd-server service is ClusterIP
-  shell: kubectl patch svc argocd-server -n argocd -p '{"spec":{"type":"ClusterIP"}}'
+  shell: >
+    kubectl --kubeconfig=/etc/kubernetes/admin.conf
+    patch svc argocd-server -n argocd
+    --type=merge
+    -p '{"spec":{"type":"ClusterIP"}}'
   register: argocd_svc_patch
-  changed_when: "'patched' in argocd_svc_patch.stdout"
+  changed_when: "'patched' in argocd_svc_patch.stdout or 'configured' in argocd_svc_patch.stdout"
+  when: kubectl_nodes_check.rc == 0
 
 - name: Ensure argocd-cmd-params-cm enables insecure server mode
   shell: >
-    kubectl patch configmap argocd-cmd-params-cm -n argocd
-    --type merge
+    kubectl --kubeconfig=/etc/kubernetes/admin.conf
+    patch configmap argocd-cmd-params-cm -n argocd
+    --type=merge
     -p '{"data":{"server.insecure":"true"}}'
   register: argocd_cmd_params_patch
   changed_when: "'patched' in argocd_cmd_params_patch.stdout or 'configured' in argocd_cmd_params_patch.stdout"
+  when: kubectl_nodes_check.rc == 0
 
 - name: Restart argocd-server deployment to apply cmd params
-  shell: kubectl rollout restart deployment/argocd-server -n argocd
+  command: >
+    kubectl --kubeconfig=/etc/kubernetes/admin.conf
+    rollout restart deployment/argocd-server -n argocd
   register: argocd_restart
   changed_when: "'restarted' in argocd_restart.stdout"
+  when: kubectl_nodes_check.rc == 0
 
 - name: Wait for argocd-server deployment after restart
-  shell: kubectl rollout status deployment/argocd-server -n argocd --timeout=300s
+  command: >
+    kubectl --kubeconfig=/etc/kubernetes/admin.conf
+    rollout status deployment/argocd-server -n argocd --timeout=300s
   changed_when: false
+  when: kubectl_nodes_check.rc == 0
 
 - name: Get Argo CD initial admin secret name
-  shell: kubectl get secret -n argocd argocd-initial-admin-secret -o name
+  command: >
+    kubectl --kubeconfig=/etc/kubernetes/admin.conf
+    get secret -n argocd argocd-initial-admin-secret -o name
   register: argocd_admin_secret_name
   changed_when: false
   failed_when: false
+  when: kubectl_nodes_check.rc == 0
 
 - name: Read Argo CD initial admin password
-  shell: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+  shell: >
+    kubectl --kubeconfig=/etc/kubernetes/admin.conf
+    -n argocd get secret argocd-initial-admin-secret
+    -o jsonpath="{.data.password}" | base64 -d
   register: argocd_admin_password
   changed_when: false
   failed_when: false
+  when: kubectl_nodes_check.rc == 0
 
 - name: Show Argo CD initial admin password
   debug:
     msg:
       - "Argo CD initial username: admin"
       - "Argo CD initial password: {{ argocd_admin_password.stdout | default('not available') }}"
+  when: kubectl_nodes_check.rc == 0
