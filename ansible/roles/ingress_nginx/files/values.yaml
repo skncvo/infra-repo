@@ -14,6 +14,7 @@ controller:
     type: NodePort
     nodePorts:
       http: 30000
+      https: 30443
 
   config:
     use-forwarded-headers: "true"
