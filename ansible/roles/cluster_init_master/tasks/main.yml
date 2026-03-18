@@ -3,6 +3,24 @@
     path: /etc/kubernetes/admin.conf
   register: kubeadm_admin_conf
 
+# 🔥 추가: 실패 상태 cleanup
+- name: Reset kubeadm if previous failed
+  command: kubeadm reset -f
+  when: not kubeadm_admin_conf.stat.exists
+  ignore_errors: yes
+
+- name: Remove etcd data dir
+  file:
+    path: /var/lib/etcd
+    state: absent
+  when: not kubeadm_admin_conf.stat.exists
+
+- name: Remove kubernetes config dir
+  file:
+    path: /etc/kubernetes
+    state: absent
+  when: not kubeadm_admin_conf.stat.exists
+
 - name: Initialize Kubernetes master
   shell: >
     kubeadm init
