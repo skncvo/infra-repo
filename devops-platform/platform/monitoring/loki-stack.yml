@@ -13,6 +13,7 @@ spec:
       values: |
         loki:
           enabled: true
+          isDefalut: false # 추가
           service:
             type: ClusterIP
           persistence:
@@ -22,12 +23,15 @@ spec:
 
         promtail:
           enabled: true
-          dnsPolicy: Default 
+          dnsPolicy: Default
 
         prometheus:
           enabled: false
         grafana:
           enabled: false
+          sidecar:
+            datasources:
+              enabled: false
   destination:
     server: 'https://kubernetes.default.svc'
     namespace: monitoring # 기존 모니터링 네임스페이스에 통합
@@ -37,3 +41,4 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+~                                   
