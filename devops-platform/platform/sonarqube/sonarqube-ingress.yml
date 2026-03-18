@@ -10,7 +10,7 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-    - host: sonar.skncvo.cloud
+    - host: sonar.chosuncnl.cloud
       http:
         paths:
           - path: /
