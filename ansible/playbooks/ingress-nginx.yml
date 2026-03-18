@@ -1,6 +1,11 @@
 - hosts: k8s_master
   become: yes
   tasks:
+    - name: Check API server readiness
+      command: kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes
+      register: kubectl_nodes_check
+      changed_when: false
+
     - name: Copy ingress values
       copy:
         src: ../roles/ingress_nginx/files/values.yaml
@@ -10,21 +15,20 @@
         mode: '0644'
 
     - name: Add ingress-nginx helm repo
-      shell: helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
-      args:
-        creates: /tmp/.ingress-nginx-repo-added
-
-    - name: Mark ingress-nginx repo added
-      file:
-        path: /tmp/.ingress-nginx-repo-added
-        state: touch
+      command: >
+        helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
 
     - name: Update helm repos
-      shell: helm repo update
+      command: helm repo update
 
     - name: Install ingress-nginx
-      shell: >
+      command: >
         helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx
+        --kubeconfig /etc/kubernetes/admin.conf
         --namespace ingress-nginx
         --create-namespace
         -f /tmp/ingress-values.yaml
+      register: ingress_install
+      changed_when: >
+        'STATUS: deployed' in ingress_install.stdout or
+        'STATUS: upgraded' in ingress_install.stdout
