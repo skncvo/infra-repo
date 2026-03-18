@@ -1,20 +1,32 @@
+- name: Check API server readiness
+  command: kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes
+  register: kubectl_nodes_check
+  changed_when: false
+
 - name: Install local-path provisioner
-  shell: kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml
+  command: >
+    kubectl --kubeconfig=/etc/kubernetes/admin.conf
+    apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml
+  when: kubectl_nodes_check.rc == 0
   register: local_path_apply
   changed_when: "'created' in local_path_apply.stdout or 'configured' in local_path_apply.stdout"
-
+ 
 - name: Set local-path as default storageclass
   shell: >
-    kubectl patch storageclass local-path
-    -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+    kubectl --kubeconfig=/etc/kubernetes/admin.conf
+    patch storageclass local-path
+    -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
   register: local_path_default
   changed_when: "'patched' in local_path_default.stdout or 'configured' in local_path_default.stdout"
+  when: kubectl_nodes_check.rc == 0
 
 - name: Show storageclasses
-  command: kubectl get storageclass
+  command: kubectl --kubeconfig=/etc/kubernetes/admin.conf get storageclass
   register: storageclass_result
   changed_when: false
+  when: kubectl_nodes_check.rc == 0
 
 - name: Print storageclasses
   debug:
     var: storageclass_result.stdout_lines
+  when: kubectl_nodes_check.rc == 0
